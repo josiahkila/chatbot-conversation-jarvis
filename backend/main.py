@@ -4,9 +4,13 @@ import logging
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from config import settings
-from openai import OpenAI
+from decouple import config
+from openai import OpenAI, OpenAIError
 
+# Add the config directory to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'config')))
+
+from config.settings import DATABASE_URL, OPEN_AI_ORG, OPEN_AI_KEY
 from functions.database import get_recent_messages, store_messages, reset_messages
 from functions.text_to_speech import convert_text_to_speech
 from functions.openai_requests import get_chat_response
@@ -14,15 +18,20 @@ from functions.openai_requests import get_chat_response
 # Ensure the current directory is in the Python path
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
-# Debugging: Print the Python path
-print("Python path:", sys.path)
-
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Get Environment Vars
-openai = OpenAI(api_key=settings.OPEN_AI_KEY)
+# Log the loaded settings for verification
+logger.info(f"Loaded settings: {DATABASE_URL}, {OPEN_AI_ORG}, {OPEN_AI_KEY}")
+
+# Initialize OpenAI client with your API key
+try:
+    openai = OpenAI(api_key=OPEN_AI_KEY)
+    logger.info("OpenAI client initialized successfully.")
+except OpenAIError as e:
+    logger.error(f"Error initializing OpenAI client: {e}")
+    raise
 
 # Initiate App
 app = FastAPI()
@@ -70,7 +79,7 @@ async def get_audio():
             file=audio_file,
         )
     transcription = response.text
-    print(transcription)
+    logger.info(f"Transcription: {transcription}")
     return {"transcription": transcription}
 
 # Post bot response
@@ -97,6 +106,7 @@ async def post_audio(file: UploadFile = File(...)):
         # Get chat response
         chat_response = get_chat_response(message_decoded)
         if not chat_response:
+            logger.error("Failed to get chat response: %s", chat_response)
             raise HTTPException(status_code=400, detail="Failed to get chat response")
         logger.info("Chat Response: %s", chat_response)
 
